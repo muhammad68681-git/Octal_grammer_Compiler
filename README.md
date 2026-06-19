@@ -1,111 +1,292 @@
-# Octal_grammer_Compiler 
 package octal;
 
 import java.util.*;
+
 /**
- * OctalCompiler
- * -------------
- * A 3-phase compiler (Lexical, Syntax, Semantic) for the octal-number based
- * CFG defined in Octal_Grammer.docx.
+ * OctalCompiler v2.0
+ * ------------------
+ * Full compiler for the octal-number-based CFG from Octal_Grammer.docx.
  *
- * Terminals in the source program are octal numbers (digits 0-7, multi-digit
- * allowed: 10,11,...,75) and the signs '+' and '-'. Each number maps to a
- * Java-like keyword (e.g. 27 -> If, 25 -> For, 75 -> Integer).
+ * NEW in v2.0  — Expression / Arithmetic support
+ * ------------------------------------------------
+ * Any Integer position (75) may now carry a full arithmetic expression
+ * in parentheses. Supported:
  *
- * Because rule 75 -> Integer represents an integer literal, the user may
- * (and for semantic checks should) attach the actual integer value in
- * parentheses, e.g.  25 75(10)   means   for <int 10>.
+ *   Literals      75(42)
+ *   Variables     75(x)              -- must be declared first
+ *   Arithmetic    75(3+4*2)          -- full precedence (+,-,*,/)
+ *   Comparison    75(x>0)            -- returns 1 (true) or 0 (false)
+ *   Unary         75(-x)   75(!x)
+ *
+ * Variable Declaration
+ * --------------------
+ *   33 75(n=<expr>)   -- declare  int  n = <expr>
+ *   33 75(n)          -- declare  int  n = 0
+ *   (any DataType code: 3,10,24,33,35,45,66,67,60)
+ *
+ * Statement forms (grammar rules → execution)
+ * -------------------------------------------
+ *   25 75(N)                   for  → prints 1 .. N
+ *   62 75(N)                   while → prints 1 .. N
+ *   15 71 62 75(N)             do-while → executes body N times
+ *   27 75(C)                   if(C!=0) → prints C
+ *   27 75(C) 16 75(E)          if/else
+ *   51 75(S) 6 75(V) 14 75(D) switch/case/default
+ *   44 75(V)                   return V
+ *   2  75(V)                   assert V
+ *   54 75(V)                   throw V
+ *   55 75(V)                   throws V
+ *   73 74 75(n=<expr>)         Modifier DataType n=<expr>  (declare+print)
+ *   74 75(n=<expr>)            DataType n=<expr>
+ *   75(<expr>)                 bare expression → evaluate and print
+ *
+ * Arithmetic-only statements  (no grammar code needed, just type the expression)
+ *   75(3+4)       → prints 7
+ *   75(x=5)       → assigns 5 to x, prints 5
+ *   75(x*2)       → prints x*2
  *
  * Usage:
- *     javac OctalCompiler.java
- *     java  OctalCompiler
- *
- * Then type a program on one line (or multiple, end with an empty line).
- * Example accepted programs:
- *     27 75(5)              -> if (5)
- *     27 75(1) 16 75(2)     -> if (1) else (2)
- *     25 75(10)             -> for (10)
- *     62 75(3)              -> while (3)
- *     44 75(0)              -> return 0
- *     73 74 75(7)           -> Modifier DataType Integer    (e.g. public int 7)
+ *     javac octal/Octal.java
+ *     java  octal.Octal
  */
 public class Octal {
-    // ---------------------------------------------------------------------
-    // 1. KEYWORD / TERMINAL TABLE  (octal-code -> keyword name)
-    // ---------------------------------------------------------------------
+
+    // =========================================================================
+    // 1. KEYWORD TABLE
+    // =========================================================================
     static final Map<String, String> KEYWORDS = new LinkedHashMap<>();
     static {
-        KEYWORDS.put("1",  "Abstract");
-        KEYWORDS.put("2",  "Assert");
-        KEYWORDS.put("3",  "Boolean");
-        KEYWORDS.put("4",  "Break");
-        KEYWORDS.put("5",  "Import");
-        KEYWORDS.put("6",  "Case");
-        KEYWORDS.put("7",  "Package");
-        KEYWORDS.put("10", "Double");
-        KEYWORDS.put("11", "Class");
-        KEYWORDS.put("12", "Const");
-        KEYWORDS.put("13", "Continue");
-        KEYWORDS.put("14", "Default");
-        KEYWORDS.put("15", "Do");
-        KEYWORDS.put("16", "Else");
-        KEYWORDS.put("17", "Catch");
-        KEYWORDS.put("20", "Enum");
-        KEYWORDS.put("21", "Extends");
-        KEYWORDS.put("22", "Final");
-        KEYWORDS.put("23", "Finally");
-        KEYWORDS.put("24", "Float");
-        KEYWORDS.put("25", "For");
-        KEYWORDS.put("26", "Goto");
-        KEYWORDS.put("27", "If");
-        KEYWORDS.put("30", "Implements");
-        KEYWORDS.put("33", "Int");
-        KEYWORDS.put("34", "Interface");
-        KEYWORDS.put("35", "Long");
-        KEYWORDS.put("36", "Native");
-        KEYWORDS.put("37", "New");
-        KEYWORDS.put("41", "Private");
-        KEYWORDS.put("42", "Protected");
-        KEYWORDS.put("43", "Public");
-        KEYWORDS.put("44", "Return");
-        KEYWORDS.put("45", "Short");
-        KEYWORDS.put("46", "Static");
-        KEYWORDS.put("47", "Strictfp");
-        KEYWORDS.put("50", "Super");
-        KEYWORDS.put("51", "Switch");
-        KEYWORDS.put("52", "Synchronized");
-        KEYWORDS.put("54", "Throw");
-        KEYWORDS.put("55", "Throws");
-        KEYWORDS.put("56", "Transient");
-        KEYWORDS.put("57", "Try");
-        KEYWORDS.put("60", "Null");
-        KEYWORDS.put("61", "Volatile");
-        KEYWORDS.put("62", "While");
-        KEYWORDS.put("66", "Byte");
-        KEYWORDS.put("67", "Char");
+        KEYWORDS.put("1",  "Abstract");   KEYWORDS.put("2",  "Assert");
+        KEYWORDS.put("3",  "Boolean");    KEYWORDS.put("4",  "Break");
+        KEYWORDS.put("5",  "Import");     KEYWORDS.put("6",  "Case");
+        KEYWORDS.put("7",  "Package");    KEYWORDS.put("10", "Double");
+        KEYWORDS.put("11", "Class");      KEYWORDS.put("12", "Const");
+        KEYWORDS.put("13", "Continue");   KEYWORDS.put("14", "Default");
+        KEYWORDS.put("15", "Do");         KEYWORDS.put("16", "Else");
+        KEYWORDS.put("17", "Catch");      KEYWORDS.put("20", "Enum");
+        KEYWORDS.put("21", "Extends");    KEYWORDS.put("22", "Final");
+        KEYWORDS.put("23", "Finally");    KEYWORDS.put("24", "Float");
+        KEYWORDS.put("25", "For");        KEYWORDS.put("26", "Goto");
+        KEYWORDS.put("27", "If");         KEYWORDS.put("30", "Implements");
+        KEYWORDS.put("33", "Int");        KEYWORDS.put("34", "Interface");
+        KEYWORDS.put("35", "Long");       KEYWORDS.put("36", "Native");
+        KEYWORDS.put("37", "New");        KEYWORDS.put("41", "Private");
+        KEYWORDS.put("42", "Protected");  KEYWORDS.put("43", "Public");
+        KEYWORDS.put("44", "Return");     KEYWORDS.put("45", "Short");
+        KEYWORDS.put("46", "Static");     KEYWORDS.put("47", "Strictfp");
+        KEYWORDS.put("50", "Super");      KEYWORDS.put("51", "Switch");
+        KEYWORDS.put("52", "Synchronized"); KEYWORDS.put("54", "Throw");
+        KEYWORDS.put("55", "Throws");     KEYWORDS.put("56", "Transient");
+        KEYWORDS.put("57", "Try");        KEYWORDS.put("60", "Null");
+        KEYWORDS.put("61", "Volatile");   KEYWORDS.put("62", "While");
+        KEYWORDS.put("66", "Byte");       KEYWORDS.put("67", "Char");
         KEYWORDS.put("75", "Integer");
-        // signs
-        KEYWORDS.put("+",  "Sign");
-        KEYWORDS.put("-",  "Sign");
+        KEYWORDS.put("+",  "Sign");       KEYWORDS.put("-",  "Sign");
     }
-    // Convenience sets used by the parser
     static final Set<String> DATATYPE = new HashSet<>(Arrays.asList(
             "3","66","67","10","24","33","35","45","60"));
     static final Set<String> MODIFIER = new HashSet<>(Arrays.asList(
             "41","43","42","36","61","56","12","47","22","46"));
-    // ---------------------------------------------------------------------
-    // 2. TOKEN
-    // ---------------------------------------------------------------------
-    static class Token {
-        final String code;     // e.g. "75", "27", "+"
-        final String keyword;  // e.g. "Integer", "If", "Sign"
-        final Integer value;   // populated only when code == "75" and user wrote 75(n)
-        final int pos;         // 1-based index in stream
-        Token(String c, String k, Integer v, int p){code=c;keyword=k;value=v;pos=p;}
+
+    // =========================================================================
+    // 2. EXPRESSION EVALUATOR (mini recursive-descent over arithmetic strings)
+    //    Supports: integer literals, variable names, +,-,*,/,%,==,!=,<,>,<=,>=,!
+    //    Variable assignment inside expression: x=<expr>
+    // =========================================================================
+    static Map<String, Double> variables = new LinkedHashMap<>();
+
+    /** Public entry: evaluate an expression string, return numeric result. */
+    static double evalExpr(String s) {
+        ExprParser ep = new ExprParser(s.trim());
+        double v = ep.parseAssign();
+        if (ep.pos < ep.src.length())
+            throw new RuntimeException(
+                "Expression error: unexpected '" + ep.src.charAt(ep.pos) + "' in \"" + s + "\"");
+        return v;
     }
-    // ---------------------------------------------------------------------
-    // 3. LEXICAL ANALYZER
-    // ---------------------------------------------------------------------
+
+    static class ExprParser {
+        final String src;
+        int pos = 0;
+        ExprParser(String s) { src = s; }
+
+        void skip() { while (pos < src.length() && src.charAt(pos) == ' ') pos++; }
+
+        // assignment:  name = expr  |  or|and
+        double parseAssign() {
+            skip();
+            // check for identifier followed by '='
+            int save = pos;
+            String id = readIdentifier();
+            skip();
+            if (id != null && pos < src.length() && src.charAt(pos) == '='
+                    && (pos + 1 >= src.length() || src.charAt(pos + 1) != '=')) {
+                pos++;
+                double val = parseAssign();
+                variables.put(id, val);
+                return val;
+            }
+            // rollback
+            pos = save;
+            return parseOr();
+        }
+
+        double parseOr() {
+            double l = parseAnd();
+            while (match("||")) l = ((l != 0) || (parseAnd() != 0)) ? 1 : 0;
+            return l;
+        }
+        double parseAnd() {
+            double l = parseEq();
+            while (match("&&")) l = ((l != 0) && (parseEq() != 0)) ? 1 : 0;
+            return l;
+        }
+        double parseEq() {
+            double l = parseRel();
+            skip();
+            while (pos + 1 < src.length()) {
+                if (match("==")) { l = (l == parseRel()) ? 1 : 0; }
+                else if (match("!=")) { l = (l != parseRel()) ? 1 : 0; }
+                else break;
+                skip();
+            }
+            return l;
+        }
+        double parseRel() {
+            double l = parseAdd();
+            skip();
+            while (pos < src.length()) {
+                if (match("<=")) { l = (l <= parseAdd()) ? 1 : 0; }
+                else if (match(">=")) { l = (l >= parseAdd()) ? 1 : 0; }
+                else if (match("<"))  { l = (l <  parseAdd()) ? 1 : 0; }
+                else if (match(">"))  { l = (l >  parseAdd()) ? 1 : 0; }
+                else break;
+                skip();
+            }
+            return l;
+        }
+        double parseAdd() {
+            double l = parseMul();
+            skip();
+            while (pos < src.length()) {
+                if (src.charAt(pos) == '+') { pos++; l += parseMul(); }
+                else if (src.charAt(pos) == '-') { pos++; l -= parseMul(); }
+                else break;
+                skip();
+            }
+            return l;
+        }
+        double parseMul() {
+            double l = parseUnary();
+            skip();
+            while (pos < src.length()) {
+                if (src.charAt(pos) == '*') { pos++; l *= parseUnary(); }
+                else if (src.charAt(pos) == '/') {
+                    pos++;
+                    double r = parseUnary();
+                    if (r == 0) throw new RuntimeException("Semantic error: division by zero");
+                    l /= r;
+                } else if (src.charAt(pos) == '%') {
+                    pos++;
+                    double r = parseUnary();
+                    if (r == 0) throw new RuntimeException("Semantic error: modulo by zero");
+                    l %= r;
+                } else break;
+                skip();
+            }
+            return l;
+        }
+        double parseUnary() {
+            skip();
+            if (pos < src.length() && src.charAt(pos) == '-') { pos++; return -parseUnary(); }
+            if (pos < src.length() && src.charAt(pos) == '!') { pos++; return (parseUnary() == 0) ? 1 : 0; }
+            return parsePrimary();
+        }
+        double parsePrimary() {
+            skip();
+            if (pos >= src.length())
+                throw new RuntimeException("Expression error: unexpected end of expression");
+            char c = src.charAt(pos);
+            // parenthesised sub-expression
+            if (c == '(') {
+                pos++;
+                double v = parseAssign();
+                skip();
+                if (pos >= src.length() || src.charAt(pos) != ')')
+                    throw new RuntimeException("Expression error: missing ')'");
+                pos++;
+                return v;
+            }
+            // numeric literal (integer or decimal)
+            if (Character.isDigit(c)) {
+                int start = pos;
+                while (pos < src.length() && (Character.isDigit(src.charAt(pos)) || src.charAt(pos) == '.')) pos++;
+                return Double.parseDouble(src.substring(start, pos));
+            }
+            // variable / identifier
+            String id = readIdentifier();
+            if (id != null) {
+                if (!variables.containsKey(id))
+                    throw new RuntimeException(
+                        "Semantic error: variable '" + id + "' is not declared");
+                return variables.get(id);
+            }
+            throw new RuntimeException("Expression error: unexpected character '" + c + "'");
+        }
+
+        /** Read a Java-style identifier starting at pos; return null if none. */
+        String readIdentifier() {
+            skip();
+            if (pos >= src.length()) return null;
+            char c = src.charAt(pos);
+            if (!Character.isLetter(c) && c != '_') return null;
+            int start = pos;
+            while (pos < src.length() && (Character.isLetterOrDigit(src.charAt(pos)) || src.charAt(pos) == '_')) pos++;
+            return src.substring(start, pos);
+        }
+
+        boolean match(String s) {
+            skip();
+            if (src.startsWith(s, pos)) { pos += s.length(); return true; }
+            return false;
+        }
+    }
+
+    /** Format a double: show as int if it is whole. */
+    static String fmt(double v) {
+        if (v == Math.floor(v) && !Double.isInfinite(v)) return String.valueOf((long) v);
+        return String.valueOf(v);
+    }
+
+    // =========================================================================
+    // 3. TOKEN
+    // =========================================================================
+    static class Token {
+        final String  code;     // e.g. "75", "27", "+"
+        final String  keyword;
+        final String  rawExpr;  // raw content inside 75(...), null if absent
+        final int     pos;      // 1-based
+
+        Token(String c, String k, String expr, int p) {
+            code = c; keyword = k; rawExpr = expr; pos = p;
+        }
+
+        /** Evaluate the expression inside this Integer token. */
+        double eval() {
+            if (!code.equals("75") || rawExpr == null)
+                throw new RuntimeException(
+                    "Semantic error at token " + pos +
+                    ": Integer literal 75(expr) required");
+            return evalExpr(rawExpr);
+        }
+
+        /** Evaluate but return int. */
+        int evalInt() { return (int) eval(); }
+    }
+
+    // =========================================================================
+    // 4. LEXER
+    // =========================================================================
     static List<Token> tokenize(String src) {
         List<Token> out = new ArrayList<>();
         int i = 0, n = src.length(), idx = 1;
@@ -114,71 +295,69 @@ public class Octal {
             if (Character.isWhitespace(c)) { i++; continue; }
             if (c == '+' || c == '-') {
                 out.add(new Token(String.valueOf(c), "Sign", null, idx++));
-                i++;
-                continue;
+                i++; continue;
             }
             if (c >= '0' && c <= '7') {
-                // greedy: read digits 0-7
                 int j = i;
                 while (j < n && src.charAt(j) >= '0' && src.charAt(j) <= '7') j++;
                 String code = src.substring(i, j);
                 i = j;
-                // optional integer literal: 75(123)
-                Integer literal = null;
+                // optional (expr) — balanced parentheses
+                String expr = null;
                 if (code.equals("75") && i < n && src.charAt(i) == '(') {
-                    int k = src.indexOf(')', i);
-                    if (k < 0)
-                        throw new RuntimeException(
-                            "Lexical error at pos " + idx + ": unclosed '(' for integer literal");
-                    String inside = src.substring(i + 1, k).trim();
-                    try { literal = Integer.parseInt(inside); }
-                    catch (NumberFormatException e) {
-                        throw new RuntimeException(
-                            "Lexical error at pos " + idx +
-                            ": '" + inside + "' is not a valid integer literal");
+                    int depth = 0, k = i;
+                    while (k < n) {
+                        if (src.charAt(k) == '(') depth++;
+                        else if (src.charAt(k) == ')') { depth--; if (depth == 0) break; }
+                        k++;
                     }
+                    if (depth != 0)
+                        throw new RuntimeException(
+                            "Lexical error at pos " + idx + ": unclosed '(' for Integer expression");
+                    expr = src.substring(i + 1, k).trim();
                     i = k + 1;
                 }
                 String kw = KEYWORDS.get(code);
                 if (kw == null)
                     throw new RuntimeException(
                         "Lexical error at pos " + idx +
-                        ": '" + code + "' is not a defined terminal in the grammar");
-                out.add(new Token(code, kw, literal, idx++));
+                        ": '" + code + "' is not a defined terminal");
+                out.add(new Token(code, kw, expr, idx++));
                 continue;
             }
             throw new RuntimeException(
-                "Lexical error at pos " + idx + ": unexpected character '" + c + "'");
+                "Lexical error at pos " + idx +
+                ": unexpected character '" + c + "'");
         }
         return out;
     }
+
     static void printTokenTable(List<Token> tokens) {
         System.out.println();
-        System.out.println("=============== LEXICAL ANALYSIS — TOKEN TABLE ===============");
-        System.out.printf("%-6s %-8s %-15s %-10s%n", "#", "Code", "Keyword", "Literal");
-        System.out.println("--------------------------------------------------------------");
+        System.out.println("============== LEXICAL ANALYSIS — TOKEN TABLE ==============");
+        System.out.printf("%-5s %-8s %-18s %-20s%n", "#", "Code", "Keyword", "Expression");
+        System.out.println("-------------------------------------------------------------");
         for (Token t : tokens) {
-            System.out.printf("%-6d %-8s %-15s %-10s%n",
+            System.out.printf("%-5d %-8s %-18s %-20s%n",
                     t.pos, t.code, t.keyword,
-                    (t.value == null ? "-" : t.value.toString()));
+                    (t.rawExpr == null ? "-" : "(" + t.rawExpr + ")"));
         }
-        System.out.println("--------------------------------------------------------------");
+        System.out.println("-------------------------------------------------------------");
         System.out.println("Total tokens: " + tokens.size());
     }
-    // ---------------------------------------------------------------------
-    // 4. SYNTAX ANALYZER  (recursive-descent for rule 71 -> Stmnt;
-    //                       full input is 70 -> 71 70 | 71 , i.e. one or more
-    //                       statements).
-    // ---------------------------------------------------------------------
+
+    // =========================================================================
+    // 5. PARSER  (recursive-descent)
+    // =========================================================================
     static class Parser {
         final List<Token> toks;
         int p = 0;
-        // record per-statement parses so semantic phase can re-walk them
         final List<List<Token>> statements = new ArrayList<>();
-        Parser(List<Token> t){ toks = t; }
-        boolean eof() { return p >= toks.size(); }
-        Token peek() { return eof() ? null : toks.get(p); }
-        Token eat()  { return toks.get(p++); }
+        Parser(List<Token> t) { toks = t; }
+        boolean eof()  { return p >= toks.size(); }
+        Token peek()   { return eof() ? null : toks.get(p); }
+        Token eat()    { return toks.get(p++); }
+
         void expect(String code, String ctx) {
             if (eof() || !toks.get(p).code.equals(code))
                 throw new RuntimeException(
@@ -191,294 +370,383 @@ public class Octal {
         void expectInteger(String ctx) {
             if (eof() || !toks.get(p).code.equals("75"))
                 throw new RuntimeException(
-                    "Syntax error: expected Integer (75) " + ctx +
+                    "Syntax error: expected Integer(75) " + ctx +
                     (eof() ? " but reached end of input"
                            : " but found '" + toks.get(p).code + "'"));
             p++;
         }
+
         void parseProgram() {
-            if (eof())
-                throw new RuntimeException("Syntax error: empty program");
+            if (eof()) throw new RuntimeException("Syntax error: empty program");
             while (!eof()) {
                 int start = p;
                 parseStmnt();
                 statements.add(new ArrayList<>(toks.subList(start, p)));
             }
         }
-        // 71 -> ... (Statement)
+
+        // 71 -> Stmnt
         void parseStmnt() {
-            if (eof())
-                throw new RuntimeException("Syntax error: expected statement");
+            if (eof()) throw new RuntimeException("Syntax error: expected statement");
             Token t = peek();
             switch (t.code) {
-                case "27": // If
+                case "27":  // If [Else]
                     eat(); expectInteger("after 'If'");
-                    if (!eof() && peek().code.equals("16")) { // Else
-                        eat(); expectInteger("after 'Else'");
-                    }
+                    if (!eof() && peek().code.equals("16")) { eat(); expectInteger("after 'Else'"); }
                     return;
-                case "62": // While
+                case "62":  // While
                     eat(); expectInteger("after 'While'"); return;
-                case "25": // For
+                case "25":  // For
                     eat(); expectInteger("after 'For'"); return;
-                case "51": // Switch
+                case "51":  // Switch [Case [Default]]
                     eat(); expectInteger("after 'Switch'");
-                    if (!eof() && peek().code.equals("6")) { // Case
+                    if (!eof() && peek().code.equals("6")) {
                         eat(); expectInteger("after 'Case'");
-                        if (!eof() && peek().code.equals("14")) { // Default
-                            eat(); expectInteger("after 'Default'");
-                        }
+                        if (!eof() && peek().code.equals("14")) { eat(); expectInteger("after 'Default'"); }
                     }
                     return;
-                case "15": // Do
-                    eat(); parseStmnt(); expect("62", "after 'Do <stmt>'");
+                case "15":  // Do <stmt> While 75
+                    eat(); parseStmnt();
+                    expect("62", "after 'Do <stmt>'");
                     expectInteger("after 'While' in do-while"); return;
-                case "57": // Try
+                case "57":  // Try <stmt> (Catch|Finally) 75
                     eat(); parseStmnt();
                     if (eof() || (!peek().code.equals("17") && !peek().code.equals("23")))
                         throw new RuntimeException(
-                            "Syntax error: 'Try' statement must be followed by Catch(17) or Finally(23)");
+                            "Syntax error: 'Try' must be followed by Catch(17) or Finally(23)");
                     eat(); expectInteger("after Catch/Finally"); return;
-                case "44": // Return
-                case "2":  // Assert
-                case "55": // Throws
-                case "54": // Throw
+                case "44":  // Return 75
+                case "2":   // Assert 75
+                case "55":  // Throws 75
+                case "54":  // Throw 75
                     eat(); expectInteger("after '" + t.keyword + "'"); return;
-                case "75": // bare Integer expression statement
+                case "75":  // bare Integer expression
                     eat(); return;
                 default:
-                    // Try declaration (72)
                     if (isDeclarationStart(t.code)) { parseDeclaration(); return; }
                     throw new RuntimeException(
                         "Syntax error at token " + t.pos +
                         ": unexpected '" + t.code + "' (" + t.keyword + ")");
             }
         }
+
         boolean isDeclarationStart(String code) {
-            return MODIFIER.contains(code) || DATATYPE.contains(code) ||
-                   code.equals("11") || code.equals("34") || code.equals("20") ||
-                   code.equals("5")  || code.equals("7")  || code.equals("37") ||
-                   code.equals("1");
+            return MODIFIER.contains(code) || DATATYPE.contains(code)
+                || code.equals("11") || code.equals("34") || code.equals("20")
+                || code.equals("5")  || code.equals("7")  || code.equals("37")
+                || code.equals("1");
         }
+
         // 72 -> Declaration
         void parseDeclaration() {
             Token t = peek();
-            // Modifier (optional, may chain) then DataType + Integer  OR class/interface/etc.
             if (MODIFIER.contains(t.code)) {
                 eat();
-                if (!eof() && peek().code.equals("11")) { // Class
-                    eat(); expectInteger("after 'Class'"); return;
-                }
-                if (!eof() && DATATYPE.contains(peek().code)) {
-                    eat(); expectInteger("after DataType in declaration"); return;
-                }
-                // Modifier alone followed by Integer (e.g. final 5)
+                if (!eof() && peek().code.equals("11")) { eat(); expectInteger("after Class"); return; }
+                if (!eof() && DATATYPE.contains(peek().code)) { eat(); expectInteger("after DataType"); return; }
                 expectInteger("after Modifier"); return;
             }
-            if (DATATYPE.contains(t.code)) {
-                eat(); expectInteger("after DataType"); return;
-            }
+            if (DATATYPE.contains(t.code)) { eat(); expectInteger("after DataType"); return; }
             switch (t.code) {
-                case "11": // Class
-                case "34": // Interface
-                case "20": // Enum
-                case "5":  // Import
-                case "7":  // Package
-                case "37": // New
+                case "11": case "34": case "20":
+                case "5":  case "7":  case "37":
                     eat(); expectInteger("after '" + t.keyword + "'"); return;
-                case "1":  // Abstract (may stand alone: 72 -> 1)
+                case "1":
                     eat();
-                    if (!eof() && peek().code.equals("11")) {
-                        eat(); expectInteger("after 'Class'");
-                    }
+                    if (!eof() && peek().code.equals("11")) { eat(); expectInteger("after Class"); }
                     return;
                 default:
                     throw new RuntimeException(
-                        "Syntax error at token " + t.pos +
-                        ": '" + t.code + "' cannot begin a declaration");
+                        "Syntax error at token " + t.pos + ": '" + t.code + "' cannot begin a declaration");
             }
         }
     }
-    // ---------------------------------------------------------------------
-    // 5. SEMANTIC ANALYZER
-    //    - Every Integer (75) used in a control-flow / loop / branch context
-    //      must carry a literal value (the user wrote 75(n)).
-    //    - For-loop and While-loop counts must be >= 1.
-    //    - Switch case value must be >= 0.
-    //    - Return value must fit in a signed 32-bit int (always true here,
-    //      but we report it as a successful semantic check).
-    // ---------------------------------------------------------------------
+
+    // =========================================================================
+    // 6. SEMANTIC CHECK
+    //    Validates that required Integer tokens carry expressions,
+    //    and checks loop / switch constraints.
+    // =========================================================================
     static void semanticCheck(List<List<Token>> statements) {
-        int idx = 0;
-        for (List<Token> stmt : statements) {
-            idx++;
+        for (int idx = 0; idx < statements.size(); idx++) {
+            List<Token> stmt = statements.get(idx);
             String head = stmt.get(0).code;
             switch (head) {
-                case "25": // For
-                case "62": // While
-                {
+                case "25": case "62": {  // For / While — count must be >= 1
                     Token n = stmt.get(1);
-                    requireLiteral(n, "loop count");
-                    if (n.value <= 0)
+                    requireExpr(n, "loop count", idx + 1);
+                    double v = n.eval();
+                    if (v < 1)
                         throw new RuntimeException(
-                            "Semantic error in statement " + idx +
-                            ": loop count must be >= 1 (got " + n.value + ")");
+                            "Semantic error in statement " + (idx+1) +
+                            ": loop count must be >= 1 (got " + fmt(v) + ")");
                     break;
                 }
-                case "27": // If [/Else]
-                {
-                    requireLiteral(stmt.get(1), "if-condition");
+                case "27": {  // If
+                    requireExpr(stmt.get(1), "if-condition", idx + 1);
                     if (stmt.size() >= 4 && stmt.get(2).code.equals("16"))
-                        requireLiteral(stmt.get(3), "else-branch value");
+                        requireExpr(stmt.get(3), "else-branch value", idx + 1);
                     break;
                 }
-                case "51": // Switch
-                {
-                    requireLiteral(stmt.get(1), "switch selector");
+                case "51": {  // Switch
+                    requireExpr(stmt.get(1), "switch selector", idx + 1);
                     for (int i = 2; i < stmt.size(); i++) {
                         Token t = stmt.get(i);
                         if (t.code.equals("75")) {
-                            requireLiteral(t, "case/default value");
-                            if (t.value < 0)
+                            requireExpr(t, "case/default value", idx + 1);
+                            double v = t.eval();
+                            if (v < 0)
                                 throw new RuntimeException(
-                                  "Semantic error in statement " + idx +
-                                  ": case value must be >= 0 (got " + t.value + ")");
+                                    "Semantic error in statement " + (idx+1) +
+                                    ": case value must be >= 0 (got " + fmt(v) + ")");
                         }
                     }
                     break;
                 }
-                case "44": // Return
-                    requireLiteral(stmt.get(1), "return value");
-                    break;
-                default:
-                    // declarations & others: literals optional
-                    break;
+                case "44":  // Return
+                    requireExpr(stmt.get(1), "return value", idx + 1); break;
+                default: break;
             }
         }
     }
-    static void requireLiteral(Token t, String role) {
-        if (!t.code.equals("75") || t.value == null)
+
+    static void requireExpr(Token t, String role, int stmtIdx) {
+        if (!t.code.equals("75") || t.rawExpr == null)
             throw new RuntimeException(
-                "Semantic error: " + role +
-                " requires an Integer literal written as 75(n)");
+                "Semantic error in statement " + stmtIdx +
+                ": " + role + " requires Integer with expression, e.g. 75(n)");
     }
-    // 5b. EXECUTION  (interpret accepted program)
-    //     - For/While 75(n)  -> prints 1..n
-    //     - Do <stmt> While 75(n) -> repeats stmt n times (or prints 1..n if no inner action)
-    //     - If 75(c) [Else 75(e)] -> prints c if c!=0 else e
-    //     - Switch 75(s) Case 75(v) [Default 75(d)] -> prints v if s==v else d
-    //     - Return 75(n) -> prints "Returned n"
-    //     - Bare 75(n)  -> prints n
-    // ---------------------------------------------------------------------
+
+    // =========================================================================
+    // 7. EXECUTOR  — interprets each accepted statement
+    // =========================================================================
     static void execute(List<List<Token>> statements) {
         System.out.println("\n=============== EXECUTION OUTPUT ===============");
         boolean any = false;
         for (List<Token> stmt : statements) {
-            String head = stmt.get(0).code;
-            switch (head) {
-                case "25":   // For
-                case "62": { // While
-                    int n = stmt.get(1).value;
-                    System.out.print(stmt.get(0).keyword + " loop -> ");
-                    for (int i = 1; i <= n; i++) System.out.print(i + (i == n ? "" : " "));
-                    System.out.println();
-                    any = true;
-                    break;
-                }
-                case "15": { // Do <stmt> While 75(n)
-                    // find the trailing 75 literal (last token)
-                    Token last = stmt.get(stmt.size() - 1);
-                    int n = (last.value != null) ? last.value : 1;
-                    System.out.print("Do-While loop -> ");
-                    for (int i = 1; i <= n; i++) System.out.print(i + (i == n ? "" : " "));
-                    System.out.println();
-                    any = true;
-                    break;
-                }
-                case "27": { // If [Else]
-                    int c = stmt.get(1).value;
-                    if (c != 0) System.out.println("If branch -> " + c);
-                    else if (stmt.size() >= 4) System.out.println("Else branch -> " + stmt.get(3).value);
-                    else System.out.println("If branch -> (skipped, condition 0)");
-                    any = true;
-                    break;
-                }
-                case "51": { // Switch
-                    int sel = stmt.get(1).value;
-                    Integer matched = null, def = null;
-                    for (int i = 2; i < stmt.size(); i++) {
-                        if (stmt.get(i).code.equals("6") && i + 1 < stmt.size())
-                            matched = stmt.get(i + 1).value;
-                        if (stmt.get(i).code.equals("14") && i + 1 < stmt.size())
-                            def = stmt.get(i + 1).value;
-                    }
-                    if (matched != null && matched == sel) System.out.println("Switch -> case " + matched);
-                    else if (def != null) System.out.println("Switch -> default " + def);
-                    else System.out.println("Switch -> no match");
-                    any = true;
-                    break;
-                }
-                case "44": // Return
-                    System.out.println("Returned " + stmt.get(1).value);
-                    any = true;
-                    break;
-                case "2":  // Assert
-                case "54": // Throw
-                case "55": // Throws
-                    System.out.println(stmt.get(0).keyword + " " + stmt.get(1).value);
-                    any = true;
-                    break;
-                case "75": // bare integer
-                    if (stmt.get(0).value != null) {
-                        System.out.println("Value -> " + stmt.get(0).value);
-                        any = true;
-                    }
-                    break;
-                default:
-                    // declarations: print signature
-                    StringBuilder sig = new StringBuilder("Declared: ");
-                    for (Token t : stmt) sig.append(t.keyword)
-                        .append(t.value != null ? "(" + t.value + ")" : "").append(' ');
-                    System.out.println(sig.toString().trim());
-                    any = true;
-            }
+            any |= execStmt(stmt);
         }
-        if (!any) System.out.println("(no executable output)");
+        if (!any) System.out.println("(no printable output)");
         System.out.println("================================================\n");
     }
 
-    // ---------------------------------------------------------------------
-    // 6. DRIVER
-    // ---------------------------------------------------------------------
+    /** Execute one statement; return true if something was printed. */
+    static boolean execStmt(List<Token> stmt) {
+        String head = stmt.get(0).code;
+        switch (head) {
+
+            // ---- FOR  25 75(N) → print 1..N ---------------------------------
+            case "25": {
+                int n = stmt.get(1).evalInt();
+                System.out.print("For loop (1 to " + n + ")  → ");
+                for (int i = 1; i <= n; i++) System.out.print(i + (i == n ? "" : ", "));
+                System.out.println();
+                return true;
+            }
+
+            // ---- WHILE  62 75(N) → print 1..N -------------------------------
+            case "62": {
+                int n = stmt.get(1).evalInt();
+                System.out.print("While loop (1 to " + n + ") → ");
+                for (int i = 1; i <= n; i++) System.out.print(i + (i == n ? "" : ", "));
+                System.out.println();
+                return true;
+            }
+
+            // ---- DO-WHILE  15 <inner-stmt> 62 75(N) -------------------------
+            case "15": {
+                // find the trailing 75 (last token is the while-count)
+                Token countTok = stmt.get(stmt.size() - 1);
+                int n = (countTok.rawExpr != null) ? countTok.evalInt() : 1;
+                // inner statement = tokens [1 .. size-3]  (exclude 15, 62, 75)
+                List<Token> inner = stmt.subList(1, stmt.size() - 2);
+                System.out.println("Do-While (repeat " + n + " time(s)):");
+                for (int i = 0; i < n; i++) {
+                    System.out.print("  Iteration " + (i + 1) + ": ");
+                    execStmt(inner);
+                }
+                return true;
+            }
+
+            // ---- TRY  57 <inner-stmt> (17|23) 75(N) ------------------------
+            case "57": {
+                Token last = stmt.get(stmt.size() - 1);
+                System.out.println("Try block:");
+                List<Token> inner = stmt.subList(1, stmt.size() - 2);
+                System.out.print("  Body: ");
+                execStmt(inner);
+                String handler = stmt.get(stmt.size() - 2).keyword;
+                System.out.println("  " + handler + " handler value → "
+                        + (last.rawExpr != null ? fmt(last.eval()) : "—"));
+                return true;
+            }
+
+            // ---- IF  27 75(C) [16 75(E)] ------------------------------------
+            case "27": {
+                double cond = stmt.get(1).eval();
+                if (cond != 0) {
+                    System.out.println("If   condition=" + fmt(cond) + " → branch taken  → " + fmt(cond));
+                } else if (stmt.size() >= 4 && stmt.get(2).code.equals("16")) {
+                    double ev = stmt.get(3).eval();
+                    System.out.println("If   condition=0 → else branch → " + fmt(ev));
+                } else {
+                    System.out.println("If   condition=0 → branch skipped");
+                }
+                return true;
+            }
+
+            // ---- SWITCH  51 75(S) [6 75(V)] [14 75(D)] ---------------------
+            case "51": {
+                double sel = stmt.get(1).eval();
+                Double caseVal = null, defVal = null;
+                for (int i = 2; i < stmt.size(); i++) {
+                    if (stmt.get(i).code.equals("6") && i + 1 < stmt.size())
+                        caseVal = stmt.get(i + 1).eval();
+                    if (stmt.get(i).code.equals("14") && i + 1 < stmt.size())
+                        defVal  = stmt.get(i + 1).eval();
+                }
+                System.out.print("Switch selector=" + fmt(sel) + " → ");
+                if (caseVal != null && caseVal == sel) System.out.println("case " + fmt(caseVal) + " matched");
+                else if (defVal != null)                System.out.println("default → " + fmt(defVal));
+                else                                    System.out.println("no match");
+                return true;
+            }
+
+            // ---- RETURN  44 75(V) -------------------------------------------
+            case "44": {
+                double v = stmt.get(1).eval();
+                System.out.println("Return → " + fmt(v));
+                return true;
+            }
+
+            // ---- ASSERT / THROW / THROWS  2|54|55  75(V) -------------------
+            case "2": case "54": case "55": {
+                double v = stmt.get(1).eval();
+                System.out.println(stmt.get(0).keyword + " → " + fmt(v));
+                return true;
+            }
+
+            // ---- BARE INTEGER  75(expr) -------------------------------------
+            case "75": {
+                Token t = stmt.get(0);
+                if (t.rawExpr != null) {
+                    double v = t.eval();
+                    // if it was an assignment expression, mention the variable
+                    String expr = t.rawExpr.trim();
+                    int eq = expr.indexOf('=');
+                    boolean isAssign = eq > 0 && (eq + 1 >= expr.length() || expr.charAt(eq + 1) != '=')
+                                               && (eq == 0 || expr.charAt(eq - 1) != '!'
+                                                           && expr.charAt(eq - 1) != '<'
+                                                           && expr.charAt(eq - 1) != '>');
+                    if (isAssign) {
+                        String varName = expr.substring(0, eq).trim();
+                        System.out.println("Assign: " + varName + " = " + fmt(v));
+                    } else {
+                        System.out.println("Value  → " + fmt(v));
+                    }
+                    return true;
+                }
+                return false;
+            }
+
+            // ---- DECLARATION  (DataType or Modifier DataType)  75(n=expr) ---
+            default: {
+                // Collect all tokens
+                StringBuilder sig = new StringBuilder("Declare: ");
+                for (Token t : stmt) {
+                    if (t.code.equals("75")) {
+                        if (t.rawExpr != null) {
+                            double v = t.eval();
+                            sig.append("(").append(t.rawExpr).append("=").append(fmt(v)).append(") ");
+                        } else {
+                            sig.append("Integer ");
+                        }
+                    } else {
+                        sig.append(t.keyword).append(" ");
+                    }
+                }
+                System.out.println(sig.toString().trim());
+                return true;
+            }
+        }
+    }
+
+    // =========================================================================
+    // 8. DRIVER
+    // =========================================================================
     public static void main(String[] args) {
         Scanner sc = new Scanner(System.in);
-        System.out.println("Octal-Grammar Compiler  (type 'exit' to quit)");
-        System.out.println("Enter a program, then a blank line to compile.\n");
+        System.out.println("╔══════════════════════════════════════════════════════════╗");
+        System.out.println("║         Octal-Grammar Compiler  v2.0                    ║");
+        System.out.println("║  Type 'help' for syntax reference, 'exit' to quit.      ║");
+        System.out.println("╚══════════════════════════════════════════════════════════╝");
+        System.out.println();
+
         while (true) {
-            System.out.println(">>> Program:");
+            // clear variable state between programs
+            variables.clear();
+            System.out.println(">>> Enter program (blank line to compile, 'exit' to quit):");
             StringBuilder sb = new StringBuilder();
             while (sc.hasNextLine()) {
                 String line = sc.nextLine();
                 if (line.trim().equalsIgnoreCase("exit")) return;
+                if (line.trim().equalsIgnoreCase("help")) { printHelp(); break; }
                 if (line.isEmpty()) break;
                 sb.append(line).append(' ');
             }
             String src = sb.toString().trim();
             if (src.isEmpty()) { System.out.println("(no input)\n"); continue; }
+
             try {
+                // PHASE 1 — Lexical
                 List<Token> tokens = tokenize(src);
                 printTokenTable(tokens);
+
+                // PHASE 2 — Syntax
                 Parser parser = new Parser(tokens);
                 parser.parseProgram();
-                System.out.println("\n[Syntax]   OK — grammar matches.");
+                System.out.println("\n[Syntax]   OK — " + parser.statements.size() + " statement(s) accepted.");
+
+                // PHASE 3 — Semantic
                 semanticCheck(parser.statements);
                 System.out.println("[Semantic] OK — program is logically valid.");
-                System.out.println("\n>>> RESULT: ACCEPTED  (" + parser.statements.size()
-                                   + " statement(s))\n");
+
+                // PHASE 4 — Execute
+                execute(parser.statements);
+
+                System.out.println(">>> RESULT: ACCEPTED\n");
             } catch (RuntimeException ex) {
                 System.out.println("\n>>> RESULT: REJECTED");
                 System.out.println("    " + ex.getMessage() + "\n");
             }
         }
+    }
+
+    static void printHelp() {
+        System.out.println();
+        System.out.println("────────────────────────────────────────────────────────────");
+        System.out.println("  OCTAL GRAMMAR QUICK REFERENCE");
+        System.out.println("────────────────────────────────────────────────────────────");
+        System.out.println("  Arithmetic inside 75(...):");
+        System.out.println("    75(3+4*2)        → prints 11");
+        System.out.println("    75(x=5)          → declares/assigns x=5, prints 5");
+        System.out.println("    75(x*3)          → prints 15  (if x=5)");
+        System.out.println("    75(10/2)         → prints 5");
+        System.out.println("    75(7%3)          → prints 1");
+        System.out.println();
+        System.out.println("  Control flow:");
+        System.out.println("    25 75(10)                    For  → 1,2,...,10");
+        System.out.println("    62 75(5)                     While → 1,2,...,5");
+        System.out.println("    15 75(1) 62 75(3)            Do inner While 3 times");
+        System.out.println("    27 75(1) 16 75(99)           If/Else");
+        System.out.println("    51 75(2) 6 75(2) 14 75(0)   Switch/Case/Default");
+        System.out.println("    44 75(42)                    Return 42");
+        System.out.println("    57 75(1) 17 75(0)            Try / Catch");
+        System.out.println();
+        System.out.println("  Declarations:");
+        System.out.println("    33 75(n=10)                  int n = 10");
+        System.out.println("    43 33 75(x=7)                public int x = 7");
+        System.out.println("────────────────────────────────────────────────────────────");
+        System.out.println();
     }
 }
